@@ -1,81 +1,155 @@
+import os
+import shutil
 import docker
 
-def get_docker_client():
-    """
-    Connects to the local Docker socket and returns a Docker client instance.
-    """
-    try:
-        # This automatically uses the local Docker socket (/var/run/docker.sock by default on Linux)
-        client = docker.from_env()
-        
-        # Test the connection to ensure it's successful
-        client.ping()
-        print("Successfully connected to the local Docker daemon.")
-        return client
-    except docker.errors.DockerException as e:
-        print(f"Failed to connect to Docker: {e}")
-        return None
+# Initialize your docker client
+client = docker.from_env()
 
-def list_containers(client):
-    """Lists all currently running containers."""
-    containers = client.containers.list()
-    print("Running containers:")
-    if not containers:
-        print("  No running containers.")
-    for c in containers:
-        print(f" - {c.name} ({c.id[:10]}): {c.status}")
-    return containers
+# Define the absolute path to the templates directory
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
 
-def start_nginx_container(client, name="test_nginx"):
-    """Starts an nginx container in detached mode."""
-    print(f"Starting nginx container named '{name}'...")
+def inject_dockerfile(build_path: str, framework: str):
+    """
+    Dynamically finds a community template file and copies it to the target directory.
+    """
+    framework_key = framework.lower()
+    
+    #look for the exact file
+    source_template_path = os.path.join(TEMPLATES_DIR, f"{framework_key}.Dockerfile")
+    
+    #validate if the community has built this template yet
+    if not os.path.exists(source_template_path):
+        raise ValueError(f"Error: No community template found for '{framework}'. "
+                         f"Please ensure {framework_key}.Dockerfile exists in the templates folder.")
+    
+    #define the destination
+    dockerfile_destination = os.path.join(build_path, "Dockerfile")
+    
+    #copy the file directly
+    shutil.copyfile(source_template_path, dockerfile_destination)
+    print(f"Successfully injected {framework_key}.Dockerfile into {build_path}")
+    
+    return dockerfile_destination
+
+
+def resolve_and_build(cloned_repo_path: str, app_id: str, root_directory: str = "/", framework: str = "django"):
+    """
+    Resolves the build path, checks for a Dockerfile, injects a template if missing,
+    and builds the Docker image.
+    """
+    #path resolution
+    clean_sub_dir = root_directory.strip("/")
+    build_path = os.path.join(cloned_repo_path, clean_sub_dir)
+    
+    #ensure the directory the user requested actually exists
+    if not os.path.isdir(build_path):
+        raise ValueError(f"Directory not found: {build_path}")
+
+    print(f"Build path resolved to: {build_path}")
+
+    #the "Native Dockerfile" Check
+    dockerfile_path = os.path.join(build_path, "Dockerfile")
+    
+    if os.path.exists(dockerfile_path):
+        print("Native Dockerfile found. Skipping template injection.")
+    else:
+        #template injection
+        print(f"No Dockerfile found. Injecting {framework} template...")
+        inject_dockerfile(build_path, framework)
+            
+    #Image Compilation
+    image_tag = f"imhotep_app_{app_id}"
+    print(f"Starting Docker build for {image_tag}...")
+    
     try:
-        container = client.containers.run(
-            "nginx:latest",
-            name=name,
-            detach=True,
-            ports={'80/tcp': 8080}
+        image, build_logs = client.images.build(
+            path=build_path,
+            tag=image_tag,
+            rm=True
         )
-        print(f"Started container {container.name} with ID {container.id[:10]}")
-        return container
-    except docker.errors.APIError as e:
-        print(f"Failed to start container: {e}")
-        return None
+        print(f"Successfully built image: {image_tag}")
+        return image
+        
+    except docker.errors.BuildError as e:
+        print(f"Docker Build Failed!")
+        for log_line in e.build_log:
+            if 'stream' in log_line:
+                print(log_line['stream'].strip())
+        raise e
 
-def stop_and_remove_container(client, name="test_nginx"):
-    """Stops and removes the specified container programmatically."""
-    print(f"Stopping and removing container '{name}'...")
+
+def create_app_network(app_id: str):
+    """
+    Creates an isolated Docker bridge network for a specific app and its database.
+    """
+    network_name = f"imhotep_net_{app_id}"
+    
+    existing_networks = client.networks.list(names=[network_name])
+    if existing_networks:
+        print(f"Network {network_name} already exists.")
+        return existing_networks
+        
+    print(f"Creating isolated network: {network_name}")
+    return client.networks.create(network_name, driver="bridge")
+
+
+def deploy_local_postgres(app_id: str, network_name: str, db_password: str):
+    """
+    Spins up a Postgres container and attaches it to the app's isolated network.
+    """
+    container_name = f"imhotep_db_{app_id}"
+    
+    env_vars = {
+        "POSTGRES_USER": "imhotep_user",
+        "POSTGRES_PASSWORD": db_password,
+        "POSTGRES_DB": f"db_{app_id}"
+    }
+
+    print(f"Deploying local database: {container_name}...")
+    
     try:
-        container = client.containers.get(name)
-        container.stop()
-        container.remove()
-        print(f"Successfully stopped and removed '{name}'.")
-    except docker.errors.NotFound:
-        print(f"Container '{name}' not found.")
+        db_container = client.containers.run(
+            "postgres:15-alpine",
+            name=container_name,
+            network=network_name,
+            environment=env_vars,
+            detach=True,
+            restart_policy={"Name": "unless-stopped"}
+        )
+        print(f"Database {container_name} is running.")
+        
+        internal_db_url = f"postgres://imhotep_user:{db_password}@{container_name}:5432/db_{app_id}"
+        return internal_db_url
+        
     except docker.errors.APIError as e:
-        print(f"Failed to stop/remove container: {e}")
+        print(f"Failed to start database container: {e}")
+        raise e
+    
 
-if __name__ == "__main__":
-    # Simple test script when running this file directly
-    client = get_docker_client()
-    if client:
-        print(f"Docker Engine Version: {client.version().get('Version')}\n")
+def deploy_app_container(app_id: str, image_tag: str, network_name: str, env_vars: dict = None):
+    """
+    Runs the compiled app image on the isolated network, injecting the environment variables.
+    """
+    if env_vars is None:
+        env_vars = {}
         
-        # 1. List running containers initially
-        list_containers(client)
-        print()
+    container_name = f"imhotep_run_{app_id}"
+    
+    print(f"Deploying app container: {container_name}...")
+    
+    try:
+        app_container = client.containers.run(
+            image=image_tag,
+            name=container_name,
+            network=network_name,
+            environment=env_vars,
+            detach=True,
+            restart_policy={"Name": "unless-stopped"}
+        )
+        print(f"App {container_name} is running successfully on {network_name}.")
+        return app_container
         
-        # 2. Start an nginx container
-        start_nginx_container(client)
-        print()
-        
-        # 3. List running containers again to verify
-        list_containers(client)
-        print()
-        
-        # 4. Stop and remove the nginx container programmatically
-        stop_and_remove_container(client)
-        print()
-        
-        # 5. List running containers final check
-        list_containers(client)
+    except docker.errors.APIError as e:
+        print(f"Failed to start app container: {e}")
+        raise e
