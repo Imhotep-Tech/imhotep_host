@@ -4,7 +4,7 @@ from .database import Base
 class Application(Base):
     __tablename__ = "applications"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String, primary_key=True, index=True)
     name = Column(String, unique=True, index=True)
     github_url = Column(String)
     branch = Column(String)

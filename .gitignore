@@ -3,6 +3,7 @@ engine/env/
 engine/__pycache__/
 *.py[cod]
 *$py.class
+*.db
 
 .env
 *.env

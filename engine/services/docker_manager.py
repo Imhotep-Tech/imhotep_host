@@ -209,3 +209,39 @@ def deploy_cloudflare_tunnel(app_id: str, network_name: str, app_container_name:
     print("Error: Cloudflare tunnel timed out.")
     raise TimeoutError("Failed to extract Cloudflare URL within 15 seconds. Check network connection.")
 
+def remove_container_safe(container_name: str):
+    """Helper function to safely stop and remove a container."""
+    try:
+        container = client.containers.get(container_name)
+        container.stop()
+        container.remove()
+        print(f"Successfully removed {container_name}")
+    except docker.errors.NotFound:
+        print(f"Container {container_name} already removed or not found.")
+    except Exception as e:
+        print(f"Error removing container {container_name}: {e}")
+
+def teardown_deployment(app_id: str):
+    """
+    Completely removes all containers and networks associated with an app.
+    """
+    print(f"Initiating teardown for deployment {app_id}...")
+    
+    # 1. Remove the Cloudflare Tunnel
+    remove_container_safe(f"imhotep_tunnel_{app_id}")
+    
+    # 2. Remove the Application Container
+    remove_container_safe(f"imhotep_run_{app_id}")
+    
+    # 3. Remove the Database Container (if it exists)
+    remove_container_safe(f"imhotep_db_{app_id}")
+    
+    # 4. Remove the Isolated Network
+    try:
+        network = client.networks.get(f"imhotep_net_{app_id}")
+        network.remove()
+        print(f"Successfully removed network imhotep_net_{app_id}")
+    except docker.errors.NotFound:
+        print("Network already removed.")
+    except Exception as e:
+        print(f"Error removing network: {e}")
