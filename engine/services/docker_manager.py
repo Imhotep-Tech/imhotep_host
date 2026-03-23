@@ -1,6 +1,8 @@
 import os
 import shutil
 import docker
+import re
+import time
 
 # Initialize your docker client
 client = docker.from_env()
@@ -153,3 +155,57 @@ def deploy_app_container(app_id: str, image_tag: str, network_name: str, env_var
     except docker.errors.APIError as e:
         print(f"Failed to start app container: {e}")
         raise e
+
+def deploy_cloudflare_tunnel(app_id: str, network_name: str, app_container_name: str, internal_port: int = 8000):
+    """
+    Deploys a Cloudflare sidecar, routes it to the app, and extracts the live URL.
+    """
+    tunnel_container_name = f"imhotep_tunnel_{app_id}"
+    
+    #routing & tunnel deployment
+    #the command tells Cloudflare exactly which container and port to route traffic to
+    routing_command = f"tunnel --url http://{app_container_name}:{internal_port}"
+    
+    print(f"Deploying Cloudflare sidecar for {app_container_name} on port {internal_port}...")
+    
+    try:
+        tunnel_container = client.containers.run(
+            image="cloudflare/cloudflared:latest",
+            name=tunnel_container_name,
+            network=network_name,
+            command=routing_command,
+            detach=True,
+            restart_policy={"Name": "unless-stopped"}
+        )
+    except docker.errors.APIError as e:
+        print(f"Failed to start Cloudflare tunnel: {e}")
+        raise e
+
+    #Log Extraction (The Regex Hunt)
+    print("Waiting for Cloudflare to generate URL...")
+    
+    # Regex pattern to find the free trycloudflare link
+    url_pattern = re.compile(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com")
+    
+    start_time = time.time()
+    timeout = 15  # Give Cloudflare 15 seconds to negotiate the connection
+
+    # Poll the logs every 1 second
+    while time.time() - start_time < timeout:
+        # Fetch the last 50 lines of logs
+        logs = tunnel_container.logs(tail=50).decode("utf-8")
+        
+        # Search the logs for our Regex pattern
+        match = url_pattern.search(logs)
+        if match:
+            live_url = match.group(0)
+            print(f"Success! App is live at: {live_url}")
+            return live_url
+            
+        time.sleep(1)
+
+    #Timeout Fallback
+    #If the loop finishes and we didn't return a URL, something went wrong
+    print("Error: Cloudflare tunnel timed out.")
+    raise TimeoutError("Failed to extract Cloudflare URL within 15 seconds. Check network connection.")
+
