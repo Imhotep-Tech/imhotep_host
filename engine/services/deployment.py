@@ -1,13 +1,21 @@
-
 import uuid
 from db.models import Application
 from db.database import SessionLocal
 from schemas.app_schema import AppCreate
-from services.docker_manager import create_app_network, deploy_app_container, deploy_cloudflare_tunnel, deploy_local_postgres, resolve_and_build
+from services.docker_manager import (
+    create_app_network,
+    deploy_app_container,
+    deploy_cloudflare_tunnel, 
+    deploy_local_postgres, 
+    resolve_and_build
+)
 from services.git_manager import cleanup_build_dir, clone_public_repo
+import docker
+
+client = docker.from_env()
 
 def run_deployment_pipeline(app_id: str, req: AppCreate):
-    """This runs in the background. It needs its own DB session so it doesn't timeout."""
+    """This runs in the background."""
     db = SessionLocal()
     repo_dir = None
     try:
@@ -62,6 +70,56 @@ def run_deployment_pipeline(app_id: str, req: AppCreate):
             app_record.status = "Failed"
             db.commit()
             
+    finally:
+        if repo_dir:
+            cleanup_build_dir(repo_dir)
+        db.close()
+
+def run_redeploy_pipeline(app_id: str, root_directory: str = "/"):
+    """Builds the new image, and ONLY swaps it if the build succeeds."""
+    db = SessionLocal()
+    app_record = db.query(Application).filter(Application.id == app_id).first()
+    
+    if not app_record:
+        db.close()
+        return
+
+    repo_dir = None
+    try:
+        #Clone & Build (The old app is still live and running during this!)
+        repo_dir = clone_public_repo(app_record.github_url, app_record.branch)
+        resolve_and_build(repo_dir, app_id, root_directory, app_record.stack)
+        
+        #The Swap (Build succeeded, now we swap them!)
+        print(f"Build successful. Swapping containers for {app_id}...")
+        container_name = f"imhotep_run_{app_id}"
+        
+        #Safely stop and remove the old container
+        try:
+            old_container = client.containers.get(container_name)
+            old_container.stop()
+            old_container.remove()
+        except docker.errors.NotFound:
+            pass #It was already stopped or deleted
+            
+        #start the new container with the LATEST env vars from the database
+        deploy_app_container(
+            app_id=app_id, 
+            image_tag=f"imhotep_app_{app_id}", 
+            network_name=app_record.network_name, 
+            env_vars=app_record.env_vars
+        )
+        
+        #Success!
+        app_record.status = "Running"
+        db.commit()
+
+    except Exception as e:
+        print(f"Redeploy Failed for {app_id}: {e}")
+        # If it fails, the old container is still running safely!
+        app_record.status = "Update Failed" 
+        db.commit()
+        
     finally:
         if repo_dir:
             cleanup_build_dir(repo_dir)

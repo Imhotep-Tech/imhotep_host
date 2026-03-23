@@ -3,13 +3,12 @@ from sqlalchemy.orm import Session
 from db.database import SessionLocal
 from db.models import Application
 from schemas.app_schema import AppCreate, AppResponse
-from services.git_manager import clone_public_repo, cleanup_build_dir
-from services.docker_manager import (
-    resolve_and_build, create_app_network, 
-    deploy_local_postgres, deploy_app_container, deploy_cloudflare_tunnel, teardown_deployment
-)
-from services.deployment import run_deployment_pipeline
+from services.docker_manager import teardown_deployment
+from services.deployment import run_deployment_pipeline, run_redeploy_pipeline
 import uuid
+import docker
+
+client = docker.from_env()
 
 router = APIRouter()
 
@@ -68,41 +67,71 @@ def get_app(app_id: str, db: Session = Depends(get_db)):
     return app
 
 @router.put("/{app_id}", response_model=AppResponse)
-def update_app(app_id: str, req: AppCreate, db: Session = Depends(get_db)):
+def update_app_and_redeploy(
+    app_id: str, 
+    req: AppCreate, 
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """Updates configuration (like Env Vars) and triggers a zero-downtime redeploy."""
     app = db.query(Application).filter(Application.id == app_id).first()
     if not app:
         raise HTTPException(status_code=404, detail="Application not found")
     
-    # Update fields
+    #Update the database
     app.name = req.name
     app.github_url = req.github_url
     app.branch = req.branch
     app.stack = req.stack
     app.env_vars = req.env_vars
+    app.status = "Updating"
     
     db.commit()
     db.refresh(app)
+
+    #redeploy in the background with the new configuration (like env vars)
+    background_tasks.add_task(run_redeploy_pipeline, app_id, req.root_directory)
     
     return app
 
 @router.post("/{app_id}/stop", response_model=AppResponse)
 def stop_app(app_id: str, db: Session = Depends(get_db)):
+    """Instantly kills the running application container."""
     app = db.query(Application).filter(Application.id == app_id).first()
     if not app:
         raise HTTPException(status_code=404, detail="Application not found")
     
-    # Here you would add logic to stop the running Docker container associated with this app.
-    
+    try:
+        container = client.containers.get(f"imhotep_run_{app_id}")
+        container.stop()
+    except docker.errors.NotFound:
+        pass # Already stopped
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+        
+    app.status = "Stopped"
+    db.commit()
+    db.refresh(app)
     return app
 
 @router.post("/{app_id}/redeploy", response_model=AppResponse)
-def redeploy_app(app_id: str, db: Session = Depends(get_db)):
+def redeploy_app(
+    app_id: str, 
+    background_tasks: BackgroundTasks, 
+    db: Session = Depends(get_db),
+    root_directory: str = "/"
+):
+    """Triggers a zero-downtime build-then-swap pipeline to pull fresh code."""
     app = db.query(Application).filter(Application.id == app_id).first()
     if not app:
         raise HTTPException(status_code=404, detail="Application not found")
     
-    # Here you would add logic to stop/remove existing Docker containers, networks, and tunnels associated with this app.
-    # Then you would re-run the deployment logic similar to the /deploy endpoint using the existing app details.
+    app.status = "Updating"
+    db.commit()
+    db.refresh(app)
+    
+    # Fire off the background swap!
+    background_tasks.add_task(run_redeploy_pipeline, app_id, root_directory)
     
     return app
 
