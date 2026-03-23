@@ -12,3 +12,4 @@ class Application(Base):
     network_name = Column(String)
     cloudflare_url = Column(String)
     env_vars = Column(JSON)
+    status = Column(String, default="Building")
