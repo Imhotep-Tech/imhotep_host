@@ -18,3 +18,6 @@ class AppResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class CommandRequest(BaseModel):
+    command: str

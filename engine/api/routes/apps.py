@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from db.database import SessionLocal
 from db.models import Application
-from schemas.app_schema import AppCreate, AppResponse
+from schemas.app_schema import AppCreate, AppResponse, CommandRequest
 from services.docker_manager import teardown_deployment
 from services.deployment import run_deployment_pipeline, run_redeploy_pipeline
 import uuid
@@ -149,3 +149,36 @@ def delete_app(app_id: str, db: Session = Depends(get_db)): # Note the 'str'
     db.commit()
     
     return {"detail": f"Application {app.name} deleted completely."}
+
+
+@router.post("/{app_id}/execute")
+def execute_command(app_id: str, req: CommandRequest, db: Session = Depends(get_db)):
+    """Executes a one-off command inside the running container and returns the logs."""
+    app = db.query(Application).filter(Application.id == app_id).first()
+    if not app:
+        raise HTTPException(status_code=404, detail="Application not found")
+        
+    if app.status != "Running":
+        raise HTTPException(status_code=400, detail="App must be running to execute commands.")
+
+    try:
+        # Find the running app container
+        container = client.containers.get(f"imhotep_run_{app_id}")
+        
+        # Execute the command inside the container
+        print(f"Executing '{req.command}' in {app_id}...")
+        exit_code, output = container.exec_run(
+            cmd=req.command,
+            workdir="/app" # Ensure it runs in the root
+        )
+        
+        # Return the terminal output back to the frontend!
+        return {
+            "exit_code": exit_code,
+            "output": output.decode("utf-8") # Decode the raw bytes into a readable string
+        }
+        
+    except docker.errors.NotFound:
+        raise HTTPException(status_code=404, detail="Container is not currently running.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
