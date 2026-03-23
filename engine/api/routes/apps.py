@@ -55,19 +55,19 @@ def deploy_application(
         "status": "Building"
     }
 
-@router.get("/apps", response_model=list[AppResponse])
+@router.get("/", response_model=list[AppResponse])
 def get_apps(db: Session = Depends(get_db)):
     apps = db.query(Application).all()
     return apps
 
-@router.get("/apps/{app_id}", response_model=AppResponse)
+@router.get("/{app_id}", response_model=AppResponse)
 def get_app(app_id: str, db: Session = Depends(get_db)):
     app = db.query(Application).filter(Application.id == app_id).first()
     if not app:
         raise HTTPException(status_code=404, detail="Application not found")
     return app
 
-@router.put("/apps/{app_id}", response_model=AppResponse)
+@router.put("/{app_id}", response_model=AppResponse)
 def update_app(app_id: str, req: AppCreate, db: Session = Depends(get_db)):
     app = db.query(Application).filter(Application.id == app_id).first()
     if not app:
@@ -85,7 +85,7 @@ def update_app(app_id: str, req: AppCreate, db: Session = Depends(get_db)):
     
     return app
 
-@router.post("/apps/{app_id}/stop", response_model=AppResponse)
+@router.post("/{app_id}/stop", response_model=AppResponse)
 def stop_app(app_id: str, db: Session = Depends(get_db)):
     app = db.query(Application).filter(Application.id == app_id).first()
     if not app:
@@ -95,7 +95,7 @@ def stop_app(app_id: str, db: Session = Depends(get_db)):
     
     return app
 
-@router.post("/apps/{app_id}/redeploy", response_model=AppResponse)
+@router.post("/{app_id}/redeploy", response_model=AppResponse)
 def redeploy_app(app_id: str, db: Session = Depends(get_db)):
     app = db.query(Application).filter(Application.id == app_id).first()
     if not app:
@@ -106,7 +106,7 @@ def redeploy_app(app_id: str, db: Session = Depends(get_db)):
     
     return app
 
-@router.delete("/apps/{app_id}")
+@router.delete("/{app_id}")
 def delete_app(app_id: str, db: Session = Depends(get_db)): # Note the 'str'
     app = db.query(Application).filter(Application.id == app_id).first()
     if not app:

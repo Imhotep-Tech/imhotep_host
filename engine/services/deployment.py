@@ -22,11 +22,15 @@ def run_deployment_pipeline(app_id: str, req: AppCreate):
             db_url = deploy_local_postgres(app_id, network.name, db_pass)
             req.env_vars["DATABASE_URL"] = db_url
         
+        #App Container & port
+        internal_port = 8000 if req.stack.lower() == "django" else 3000
+        app_container_name = f"imhotep_run_{app_id}"
+
         #Start the Tunnel FIRST
         live_url = deploy_cloudflare_tunnel(
             app_id=app_id, network_name=network.name, 
-            app_container_name=app_container.name,
-            internal_port=8000 if req.stack.lower() == "django" else 3000
+            app_container_name=app_container_name,
+            internal_port=internal_port
         )
 
         #Dynamically inject the new URL into the environment variables!
