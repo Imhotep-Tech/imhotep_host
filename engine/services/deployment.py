@@ -30,9 +30,9 @@ def run_deployment_pipeline(app_id: str, req: AppCreate):
         if req.include_db:
             # We combine the logic into one block to avoid redundant container deployments
             db_user = "imhotep_user"
-            db_name = "imhotep_db"
+            db_name = f"db_{app_id}"
             db_pass = str(uuid.uuid4())[:12]
-            db_host = "db" 
+            db_host = f"imhotep_db_{app_id}"
             db_port = "5432"
             
             # Deploy Postgres
@@ -50,6 +50,8 @@ def run_deployment_pipeline(app_id: str, req: AppCreate):
             req.env_vars["POSTGRES_DB"] = db_name
             req.env_vars["POSTGRES_USER"] = db_user
             req.env_vars["POSTGRES_PASSWORD"] = db_pass
+            req.env_vars["POSTGRES_HOST"] = db_host
+            req.env_vars["POSTGRES_PORT"] = db_port
             
             print(f"[{app_id}] Postgres deployed. Waiting 10s for initialization...")
             time.sleep(10) # Give Postgres time to start before Django tries to migrate

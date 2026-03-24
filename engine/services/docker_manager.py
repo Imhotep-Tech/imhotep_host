@@ -35,7 +35,13 @@ def inject_dockerfile(build_path: str, framework: str):
     return dockerfile_destination
 
 
-def resolve_and_build(cloned_repo_path: str, app_id: str, root_directory: str = "/", framework: str = "django"):
+def resolve_and_build(
+    cloned_repo_path: str,
+    app_id: str,
+    root_directory: str = "/",
+    framework: str = "django",
+    force_template: bool = False
+):
     """
     Resolves the build path, checks for a Dockerfile, injects a template if missing,
     and builds the Docker image.
@@ -53,11 +59,14 @@ def resolve_and_build(cloned_repo_path: str, app_id: str, root_directory: str = 
     #the "Native Dockerfile" Check
     dockerfile_path = os.path.join(build_path, "Dockerfile")
     
-    if os.path.exists(dockerfile_path):
+    if os.path.exists(dockerfile_path) and not force_template:
         print("Native Dockerfile found. Skipping template injection.")
     else:
         #template injection
-        print(f"No Dockerfile found. Injecting {framework} template...")
+        if force_template and os.path.exists(dockerfile_path):
+            print(f"force_template=true. Overriding native Dockerfile with {framework} template...")
+        else:
+            print(f"No Dockerfile found. Injecting {framework} template...")
         inject_dockerfile(build_path, framework)
             
     #Image Compilation

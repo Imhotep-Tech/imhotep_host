@@ -8,6 +8,7 @@ class AppCreate(BaseModel):
     stack: str = "django"
     root_directory: str = "/"
     include_db: bool = False
+    force_template: bool = False
     env_vars: Optional[Dict[str, str]] = {}
 
 class AppResponse(BaseModel):

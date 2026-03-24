@@ -7,6 +7,7 @@ from services.docker_manager import teardown_deployment
 from services.deployment import run_deployment_pipeline, run_redeploy_pipeline
 import uuid
 import docker
+from sqlalchemy.orm.attributes import flag_modified
 
 client = docker.from_env()
 
@@ -27,6 +28,8 @@ def deploy_application(
     db: Session = Depends(get_db)
 ):
     app_id = str(uuid.uuid4())[:6]
+    req.env_vars = req.env_vars or {}
+    req.env_vars["FORCE_TEMPLATE"] = "true" if req.force_template else "false"
     
     #Save the initial "Building" state to the database instantly
     new_app = Application(
@@ -70,26 +73,43 @@ def get_app(app_id: str, db: Session = Depends(get_db)):
 def update_app_and_redeploy(
     app_id: str, 
     req: AppCreate, 
-    background_tasks: BackgroundTasks,
+    background_tasks: BackgroundTasks, 
     db: Session = Depends(get_db)
 ):
-    """Updates configuration (like Env Vars) and triggers a zero-downtime redeploy."""
     app = db.query(Application).filter(Application.id == app_id).first()
     if not app:
         raise HTTPException(status_code=404, detail="Application not found")
     
-    #Update the database
+    #Capture the existing "Enriched" variables
+    infra_keys = [
+        "DATABASE_URL", "DATABASE_NAME", "DATABASE_USER", 
+        "DATABASE_PASSWORD", "DATABASE_HOST", "DATABASE_PORT",
+        "ALLOWED_HOSTS", "SITE_DOMAIN", "CSRF_TRUSTED_ORIGINS",
+        "RELATIVE_ROOT", "FORCE_TEMPLATE"
+    ]
+    
+    enriched_vars = {k: v for k, v in app.env_vars.items() if k in infra_keys}
+    
+    #Update with the new user variables from the request
+    new_vars = (req.env_vars or {}).copy()
+    new_vars["FORCE_TEMPLATE"] = "true" if req.force_template else "false"
+    
+    #Merge them (User variables win, but Infra variables are preserved)
+    final_vars = {**new_vars, **enriched_vars}
+    
+    #Update the DB record
     app.name = req.name
     app.github_url = req.github_url
     app.branch = req.branch
-    app.stack = req.stack
-    app.env_vars = req.env_vars
+    app.env_vars = final_vars
     app.status = "Updating"
     
+    #Tell SQLAlchemy the dictionary changed
+    flag_modified(app, "env_vars")
     db.commit()
     db.refresh(app)
 
-    #redeploy in the background with the new configuration (like env vars)
+    #Trigger the redeploy using the merged variables
     background_tasks.add_task(run_redeploy_pipeline, app_id, req.root_directory)
     
     return app
