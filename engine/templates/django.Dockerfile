@@ -7,11 +7,10 @@ WORKDIR /app
 
 COPY requirements.txt /app/
 
-RUN pip install --no-cache-dir -r requirements.txt gunicorn
+RUN pip install --no-cache-dir -r requirements.txt gunicorn whitenoise
 
 COPY . /app/
 
 EXPOSE 8000
 
-# Run migrations, collect static files, and THEN boot Gunicorn
-CMD ["sh", "-c", "python manage.py makemigrations accounts && python manage.py makemigrations && python manage.py migrate && python manage.py collectstatic --noinput && gunicorn --bind 0.0.0.0:8000 imhotep_finance.wsgi:application"]
+CMD ["sh", "-c", "python /app/templates_utils/Django.py; python manage.py makemigrations --noinput || true; python manage.py migrate --run-syncdb --noinput && python manage.py collectstatic --noinput && gunicorn --bind 0.0.0.0:8000 ${WSGI_MODULE:-imhotep_finance.wsgi}:application"]

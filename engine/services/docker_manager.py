@@ -10,6 +10,7 @@ client = docker.from_env()
 # Define the absolute path to the templates directory
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
+TEMPLATE_UTILS_DIR = os.path.join(BASE_DIR, "templates_utils")
 
 def inject_dockerfile(build_path: str, framework: str):
     """
@@ -31,6 +32,15 @@ def inject_dockerfile(build_path: str, framework: str):
     #copy the file directly
     shutil.copyfile(source_template_path, dockerfile_destination)
     print(f"Successfully injected {framework_key}.Dockerfile into {build_path}")
+
+    # check for any associated utility script for that framework
+    util_source = os.path.join(TEMPLATE_UTILS_DIR, f"{framework_key.capitalize()}.py")
+    if os.path.exists(util_source):
+        util_target_dir = os.path.join(build_path, "templates_utils")
+        os.makedirs(util_target_dir, exist_ok=True)
+        util_target = os.path.join(util_target_dir, f"{framework_key.capitalize()}.py")
+        shutil.copyfile(util_source, util_target)
+        print(f"Injected template utility: templates_utils/{framework_key.capitalize()}.py")
     
     return dockerfile_destination
 
