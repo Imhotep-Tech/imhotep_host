@@ -1,25 +1,59 @@
-# 🏗️ Imhotep Host
+# Imhotep Host
 
-**A lightweight, self-hosted deployment engine using zero-trust network tunnels.**
+**Imhotep Host** is a FastAPI-based zero-downtime PaaS orchestrator that deploys Git-backed applications into isolated Docker networks, optionally provisions a PostgreSQL sidecar, and exposes apps through Cloudflare tunnels.
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Python](https://img.shields.io/badge/Python-FastAPI-2b5b84.svg)
-![Docker](https://img.shields.io/badge/Docker-Ready-2496ed.svg)
+## What It Does
 
-## The Problem: The "Heroku Void"
-Hosting simple backend APIs, databases, or hobby projects has become prohibitively expensive. Existing self-hosted PaaS solutions (like Dokku or Coolify) are fantastic, but they require a public VPS, complex reverse-proxy configurations, and router port-forwarding. 
+| Capability | Description |
+| --- | --- |
+| **Deploy from GitHub** | Clones a public repo, resolves Docker build context, and builds image tag `imhotep_app_{app_id}`. |
+| **Template injection** | Injects framework templates (for example `django.Dockerfile`) when a native Dockerfile is missing or when forced. |
+| **Per-app isolation** | Creates an isolated Docker bridge network `imhotep_net_{app_id}` for app and sidecars. |
+| **Optional database sidecar** | Provisions `postgres:15-alpine` as `imhotep_db_{app_id}` and injects runtime DB environment variables. |
+| **Public tunnel** | Starts `cloudflare/cloudflared` as `imhotep_tunnel_{app_id}` and extracts a live `trycloudflare.com` URL. |
+| **Zero-downtime redeploy** | Starts candidate container, health-checks it, then swaps it into the primary container name. |
 
-## The Solution: Native Sidecar Tunnels
-**Imhotep Host** allows you to turn any local machine (like an old Mac mini or a Raspberry Pi or your old laptop) into a powerful PaaS without opening a single port on your router. 
+## Quick Start
 
-Instead of a centralized proxy, Imhotep Host dynamically attaches a Zero-Trust network "sidecar" (Cloudflare/Tailscale) directly to each deployed app's isolated virtual network. Your apps securely punch a hole straight to the internet, bypassing your local firewall entirely.
+### 1) Engine prerequisites
 
-### ✨ Features
-- **UI-Driven:** No sysadmin skills required. Manage deployments via a clean React dashboard.
-- **Zero-Trust Networking:** Automatic, secure public URLs via Cloudflare Quick Tunnels.
-- **Automated Builds:** Paste a GitHub link, and the Python engine handles the Docker orchestration.
-- **Custom Dockerfiles:** Use official community templates (Django, .NET, Node), or inject your own custom build scripts via the UI.
-- **Local Databases:** Spin up isolated PostgreSQL instances that natively talk to your apps on a secure, internal Docker bridge network.
+- **Python 3.10+**
+- **Docker daemon running**
 
-## 🚀 Getting Started (Coming Soon)
-*Documentation and 1-click `docker-compose` installation instructions are currently under active development.*
+### 2) Install dependencies
+
+```bash
+cd engine
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+pip install uvicorn
+```
+
+### 3) Run the API locally
+
+```bash
+cd engine
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### 4) Verify health
+
+```bash
+curl http://localhost:8000/
+curl http://localhost:8000/api/system/health
+```
+
+## Documentation
+
+Use this as the landing page for deeper docs:
+
+- [Architecture](docs/architecture.md)
+- [API Reference](docs/api_reference.md)
+- [Deployment Guide](docs/deployment_guide.md)
+- [Testing Guide](docs/testing.md)
+
+## Contributing
+
+Contributions are welcome. See the contributor guide:
+
+- [Contributing Guide](CONTRIBUTING.md)
