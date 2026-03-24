@@ -148,14 +148,21 @@ def deploy_local_postgres(app_id: str, network_name: str, db_password: str):
         raise e
     
 
-def deploy_app_container(app_id: str, image_tag: str, network_name: str, env_vars: dict = None):
+def deploy_app_container(
+    app_id: str,
+    image_tag: str,
+    network_name: str,
+    env_vars: dict = None,
+    container_name: str = None
+):
     """
     Runs the compiled app image on the isolated network, injecting the environment variables.
     """
     if env_vars is None:
         env_vars = {}
         
-    container_name = f"imhotep_run_{app_id}"
+    if container_name is None:
+        container_name = f"imhotep_run_{app_id}"
     
     print(f"Deploying app container: {container_name}...")
     
