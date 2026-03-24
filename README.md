@@ -13,7 +13,7 @@ Follow these steps from a clean machine to get the **engine API** running. The U
 1. **Clone the repository** (use your fork URL or the upstream URL you were given):
 
    ```bash
-   git clone https://github.com/<owner>/imhotep_host.git
+   git clone https://github.com/Imhotep-Tech/imhotep_host.git
    cd imhotep_host
    ```
 
