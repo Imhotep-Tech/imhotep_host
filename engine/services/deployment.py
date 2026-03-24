@@ -17,49 +17,10 @@ from sqlalchemy.orm.attributes import flag_modified
 
 client = docker.from_env()
 
-
 def _to_bool(value):
     '''Converts various truthy string representations to a boolean True, else False.'''
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
-
-def _build_runtime_env(app_id: str, env_vars: dict, cloudflare_url: str = None) -> dict:
-    """Rehydrates infra env vars so redeploy mirrors deploy behavior."""
-    final_env = dict(env_vars or {})
-
-    # Preserve persistent deploy behavior for template strategy.
-    final_env["FORCE_TEMPLATE"] = "true" if _to_bool(final_env.get("FORCE_TEMPLATE", "false")) else "false"
-
-    # Ensure database host aliases are coherent if DB URL already exists.
-    db_url = final_env.get("DATABASE_URL")
-    if db_url:
-        parsed = urlparse(db_url)
-        db_host = parsed.hostname or f"imhotep_db_{app_id}"
-        db_port = str(parsed.port or 5432)
-        db_name = parsed.path.lstrip("/") if parsed.path else f"db_{app_id}"
-        if parsed.username:
-            final_env["DATABASE_USER"] = parsed.username
-            final_env["POSTGRES_USER"] = parsed.username
-        if parsed.password:
-            final_env["DATABASE_PASSWORD"] = parsed.password
-            final_env["POSTGRES_PASSWORD"] = parsed.password
-        final_env["DATABASE_HOST"] = db_host
-        final_env["DATABASE_PORT"] = db_port
-        final_env["DATABASE_NAME"] = db_name
-        final_env["POSTGRES_HOST"] = db_host
-        final_env["POSTGRES_PORT"] = db_port
-        final_env["POSTGRES_DB"] = db_name
-    
-    # If a Cloudflare URL is changed, ensure it's included in ALLOWED_HOSTS and related settings for Django apps.
-    if cloudflare_url:
-        clean_host = cloudflare_url.replace("https://", "").replace("http://", "").strip("/")
-        existing_hosts = final_env.get("ALLOWED_HOSTS", "")
-        if clean_host not in [h.strip() for h in existing_hosts.split(",") if h.strip()]:
-            final_env["ALLOWED_HOSTS"] = f"{existing_hosts},{clean_host}" if existing_hosts else clean_host
-        final_env["SITE_DOMAIN"] = cloudflare_url
-        final_env["CSRF_TRUSTED_ORIGINS"] = cloudflare_url
-
-    return final_env
 
 def run_deployment_pipeline(app_id: str, req: AppCreate):
     """This runs in the background to handle the heavy lifting."""
@@ -118,7 +79,16 @@ def run_deployment_pipeline(app_id: str, req: AppCreate):
             internal_port=internal_port
         )
 
-        req.env_vars = _build_runtime_env(app_id, req.env_vars, cloudflare_url=live_url)
+        clean_host = live_url.replace("https://", "").replace("http://", "").strip("/")
+        existing_hosts = req.env_vars.get("ALLOWED_HOSTS", "")
+        
+        if existing_hosts:
+            req.env_vars["ALLOWED_HOSTS"] = f"{existing_hosts},{clean_host}"
+        else:
+            req.env_vars["ALLOWED_HOSTS"] = clean_host
+
+        req.env_vars["SITE_DOMAIN"] = live_url
+        req.env_vars["CSRF_TRUSTED_ORIGINS"] = live_url
 
         #Deploy App Container
         deploy_app_container(
@@ -150,7 +120,7 @@ def run_deployment_pipeline(app_id: str, req: AppCreate):
         db.close()
 
 def run_redeploy_pipeline(app_id: str, root_directory: str = "/"):
-    """Zero-downtime swap: Builds new image first, then replaces container."""
+    """Zero-downtime swap: Builds new image, then replaces container using the exact saved env_vars."""
     db = SessionLocal()
     app_record = db.query(Application).filter(Application.id == app_id).first()
     
@@ -163,36 +133,44 @@ def run_redeploy_pipeline(app_id: str, root_directory: str = "/"):
     try:
         #Clone & Build (App stays live during this)
         repo_dir = clone_public_repo(app_record.github_url, app_record.branch)
-        runtime_root = (app_record.env_vars or {}).get("RELATIVE_ROOT", root_directory)
-        runtime_env = _build_runtime_env(app_id, app_record.env_vars or {}, app_record.cloudflare_url)
-        force_template = _to_bool(runtime_env.get("FORCE_TEMPLATE", "false"))
+        
+        # Just grab the exact dictionary from the database
+        exact_env_vars = app_record.env_vars or {}
+        
+        runtime_root = exact_env_vars.get("RELATIVE_ROOT", root_directory)
+        force_template = str(exact_env_vars.get("FORCE_TEMPLATE", "")).strip().lower() in {"1", "true", "yes", "on"}
+        
         resolve_and_build(repo_dir, app_id, runtime_root, app_record.stack, force_template)
         
-        # Start candidate first; only swap if it stays up.
+        #Start candidate container
         print(f"Build successful. Starting candidate container for {app_id}...")
         container_name = f"imhotep_run_{app_id}"
         candidate_name = f"{container_name}_candidate"
+        
+        #Clean up any old failed candidates just in case
         try:
             stale_candidate = client.containers.get(candidate_name)
             stale_candidate.remove(force=True)
         except docker.errors.NotFound:
             pass
 
+        #Boot the new container with the exact same variables
         candidate_container = deploy_app_container(
             app_id=app_id, 
             image_tag=f"imhotep_app_{app_id}", 
             network_name=app_record.network_name, 
-            env_vars=runtime_env,
+            env_vars=exact_env_vars,
             container_name=candidate_name
         )
 
+        #Health check (Wait 6 seconds, see if it crashed)
         time.sleep(6)
         candidate_container.reload()
         if candidate_container.status != "running":
             logs = candidate_container.logs(tail=120).decode("utf-8", errors="ignore")
             raise RuntimeError(f"Candidate container failed to stay running.\n{logs}")
 
-        # Swap container names so Cloudflare tunnel target is unchanged.
+        #The Swap
         print(f"Candidate healthy. Swapping containers for {app_id}...")
         try:
             old_container = client.containers.get(container_name)
@@ -201,10 +179,9 @@ def run_redeploy_pipeline(app_id: str, root_directory: str = "/"):
         except docker.errors.NotFound:
             pass
 
+        # Rename candidate so the Cloudflare tunnel seamlessly connects to it
         candidate_container.rename(container_name)
         
-        app_record.env_vars = runtime_env
-        flag_modified(app_record, "env_vars")
         app_record.status = "Running"
         db.commit()
 
