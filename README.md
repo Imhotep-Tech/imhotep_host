@@ -13,7 +13,7 @@ Follow these steps from a clean machine to get the **engine API** running. The U
 1. **Clone the repository** (use your fork URL or the upstream URL you were given):
 
    ```bash
-   git clone https://github.com/Imhotep-Tech/imhotep_host.git
+   git clone https://github.com/<owner>/imhotep_host.git
    cd imhotep_host
    ```
 
@@ -85,6 +85,34 @@ In-depth guides (each page includes the same navigation and a development notice
 - [API Reference](docs/api_reference.md)
 - [Deployment Guide](docs/deployment_guide.md)
 - [Testing Guide](docs/testing.md)
+
+## Status & Roadmap
+
+The project has a strong backend foundation in place and is now moving into product and UX expansion. Progress is tracked in phases below.
+
+### Phase 1: The Core Orchestration Engine (Completed)
+
+- [x] FastAPI REST API for deployment lifecycle management.
+- [x] Docker SDK integration for container and network isolation.
+- [x] Dynamic PostgreSQL sidecar provisioning.
+- [x] Automated Cloudflare Tunnel (`cloudflared`) routing and URL extraction.
+- [x] Zero-Downtime Redeploy architecture (Candidate build -> Health check -> Swap).
+- [x] Comprehensive Pytest integration suite with Docker SDK assertions.
+- [x] Framework template injection (fallback Dockerfiles for unsupported repos).
+
+### Phase 2: The Frontend Dashboard (Up Next)
+
+- [ ] Create a separate frontend repository (e.g., Next.js or React).
+- [ ] Build a UI to consume the `/api/apps` endpoints.
+- [ ] Deployment forms for environment variables, branch selection, and framework detection.
+- [ ] Live status badges and container state visualization.
+
+### Phase 3: Advanced Features & Polish (Future)
+
+- [ ] Custom domain mapping (bypassing `trycloudflare` for permanent domains).
+- [ ] Persistent volume claims for user uploads/media files.
+- [ ] Live container log streaming (WebSocket integration).
+- [ ] Authentication and user isolation (multi-tenant support).
 
 ## Contributing
 
