@@ -2,6 +2,7 @@ fastapi
 uvicorn
 docker
 gitpython
-sqlalchemycryptography
+sqlalchemy
+cryptography
 pytest
 httpx
