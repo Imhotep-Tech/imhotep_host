@@ -1,3 +1,7 @@
+**[Home](../README.md)** · **[Architecture](architecture.md)** · **API Reference** (you are here) · **[Deployment Guide](deployment_guide.md)** · **[Testing](testing.md)** · **[Contributing](../CONTRIBUTING.md)**
+
+> **Under development:** Endpoint contracts and response shapes follow the current FastAPI code. If behavior and docs diverge, the routes under `engine/api/routes/` win until this page is updated.
+
 # API Reference
 
 This reference is based on the current FastAPI routes in `engine/api/routes/apps.py`.

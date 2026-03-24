@@ -1,3 +1,7 @@
+**[Home](../README.md)** · **Architecture** (you are here) · **[API Reference](api_reference.md)** · **[Deployment Guide](deployment_guide.md)** · **[Testing](testing.md)** · **[Contributing](../CONTRIBUTING.md)**
+
+> **Under development:** This architecture reflects the current codebase but may change as Imhotep Host evolves. Prefer the repository and integration tests as the source of truth.
+
 # Architecture
 
 This document describes how **Imhotep Host** orchestrates deployments using FastAPI, SQLAlchemy, Docker, PostgreSQL sidecars, and Cloudflare tunnels.

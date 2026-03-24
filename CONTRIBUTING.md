@@ -1,5 +1,9 @@
 # Contributing to Imhotep Host
 
+**[Home](README.md)** · **[Architecture](docs/architecture.md)** · **[API Reference](docs/api_reference.md)** · **[Deployment Guide](docs/deployment_guide.md)** · **[Testing](docs/testing.md)** · **Contributing** (you are here)
+
+> **Under development:** Imhotep Host is **actively under development**. Contribution areas, APIs, and workflows may shift. When in doubt, open an issue or align changes with the current code and [Testing](docs/testing.md).
+
 First off, thank you for considering contributing to Imhotep Host. Contributions are welcome across the orchestration engine, API design, templates, tests, and docs.
 
 ## Project Areas
@@ -20,10 +24,13 @@ First off, thank you for considering contributing to Imhotep Host. Contributions
 - Python 3.10+
 - Docker daemon running locally
 
-### Setup
+### Clone and setup
 
 ```bash
-cd engine
+git clone https://github.com/<owner>/imhotep_host.git
+cd imhotep_host/engine
+python3 -m venv .venv
+source .venv/bin/activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 pip install pytest uvicorn

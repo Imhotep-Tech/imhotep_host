@@ -1,3 +1,7 @@
+**[Home](../README.md)** · **[Architecture](architecture.md)** · **[API Reference](api_reference.md)** · **Deployment Guide** (you are here) · **[Testing](testing.md)** · **[Contributing](../CONTRIBUTING.md)**
+
+> **Under development:** Build steps, template names, and env injection follow the current engine. Expect adjustments as templates and rollback behavior mature.
+
 # Deployment Guide
 
 This guide explains how Imhotep Host builds and runs applications using the deployment pipeline in `engine/services/deployment.py` and `engine/services/docker_manager.py`.

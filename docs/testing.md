@@ -1,3 +1,7 @@
+**[Home](../README.md)** · **[Architecture](architecture.md)** · **[API Reference](api_reference.md)** · **[Deployment Guide](deployment_guide.md)** · **Testing** (you are here) · **[Contributing](../CONTRIBUTING.md)**
+
+> **Under development:** Test layout, fixtures, and CI steps may change. After pulling latest `main`, run `pytest -v tests` from `engine/` and read `engine/tests/conftest.py` for current mocking behavior.
+
 # Testing Guide
 
 Imhotep Host uses integration-style tests to validate the deployment lifecycle while keeping runtime fast and deterministic.
@@ -22,10 +26,10 @@ Core fixture behavior:
   - `services.deployment`
 - Forces FastAPI background tasks to run **inline** so tests can assert final state immediately.
 - Mocks heavy/external deployment pieces:
-  - `clone_public_repo` -> temp directory
-  - `resolve_and_build` -> pulls lightweight image and tags `imhotep_app_{app_id}`
-  - `deploy_cloudflare_tunnel` -> static mock URL
-  - `time.sleep` in deployment pipeline -> no-op
+  - `clone_public_repo` → temp directory
+  - `resolve_and_build` → pulls lightweight image and tags `imhotep_app_{app_id}`
+  - `deploy_cloudflare_tunnel` → static mock URL
+  - `time.sleep` in deployment pipeline → no-op
 - Auto-cleans all Docker resources prefixed with `imhotep_` after each test.
 
 ## Why Heavy Builds Are Mocked
@@ -54,7 +58,7 @@ The suite preserves **orchestration realism** by still creating real containers/
 
 ## Running Tests Locally
 
-From repository root:
+From repository root (after [cloning](../README.md#get-the-repository-and-run-locally-step-by-step)):
 
 ```bash
 cd engine
